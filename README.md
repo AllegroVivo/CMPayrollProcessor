@@ -9,32 +9,51 @@ This project is a tool that allows the user to perform the following tasks:
 ## Usage & Operation
 
 1. Locate the `Payroll Processor.exe` file in the file explorer and double-click to launch the application.
+
 ![Open EXE](assets/OpenEXEImage.png)
+
 2. Upon launching, the user will be presented with the main interface of the application.
+
 ![Main Interface](assets/MainInterfaceImage.png)
+
 3. Click the "Browse" button next to the `Source Workbook` input field to select the source workbook file for this pay period. The source workbook should contain the commission data exported from ServiceTitan as well as any manual adjustments (DPAs).
+
 ![Select Source Workbook](assets/SelectSourceWorkbookImage.png)
 ![Select Source Workbook](assets/SelectSourceWorkbookBrowse.png)
+
 4. Similarly, click the "Browse" button next to the `Library Path` input field to select the historical invoice data file. This file is used to look up missing customer names in the commission data.
+
 ![Select Library Data](assets/BrowseForLookupTable.png)
 
     __NOTE:__ The Library Data can be either an Excel workbook exported from ServiceTitan or the generated historical invoice JSON lookup file. The generated JSON file is preferred for performance reasons and should appear after using the application for the first time.
+
 5. Lastly, click the "Browse" button next to the `Output Directory` input field to select the folder where the generated reports, master workbook, and PDF exports will be saved.
+
 ![Select Output Directory](assets/OutputDirectory.png)
+
 6. Once all input fields are populated, click the newly activated "`Merge Payroll Data`" button at the bottom left of the window to start the processing operation.
+
 ![Merge Payroll Data](assets/MergePayrollDataButton.png)
+
 7. The application will process the data and generate the required report workbook. The central log window will display progress updates during the operation.
+
 ![Processing Log](assets/MergeProcessingLog.png)
+
 8. Upon completion, the logging pane will indicate that the operation was successful.
+
 9. At this point, the user is encouraged to review the generated master workbook and individual commission reports for accuracy. The files will be located in the output directory specified earlier.
 
    __NOTE:__ DO NOT CLOSE THE PAYROLL PROCESSOR APPLICATION AT THIS TIME, IT WILL LOSE ITS CONNECTION TO THE MERGED WORKBOOK AND WILL BE UNABLE TO EXPORT THE PDF REPORTS.
 
 10. After reviewing the generated reports, click the now-active "`Export PDFs`" button at the bottom center of the window to generate PDF versions of the individual commission reports for distribution to technicians. The application will ask for the date to append to the PDF filenames.
+
 ![Export PDFs](assets/ExportPDFsButton.png)
+
 11. The application will export the individual commission reports as PDFs and save them in the output directory specified earlier. Progress will be displayed in the logging pane.
+
 ![Print Date Dialog](assets/PrintDateDialog.png)
 ![PDF Export Log](assets/PDFExportLog.png)
+
 12. Once the PDF export operation is complete, the logging pane will indicate that the operation was successful. The user may now close the application and distribute the generated PDF reports to the respective technicians for their review.
 
 ## Dependencies
