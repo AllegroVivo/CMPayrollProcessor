@@ -60,6 +60,7 @@ __NOTE:__ DO NOT CLOSE THE PAYROLL PROCESSOR APPLICATION AT THIS TIME, IT WILL L
 The CM Heading Payroll Processor relies on the following libraries and frameworks:
 - `openpyxl` - For reading and writing Excel workbooks.
 - `PySide6` - For creating the graphical user interface (GUI).
+- `pywin32` - For interacting with Microsoft Excel via COM automation.
 - `pyinstaller` - For packaging the application into a standalone executable.
 
 ## System Requirements:
