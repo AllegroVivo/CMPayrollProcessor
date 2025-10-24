@@ -25,7 +25,7 @@ This project is a tool that allows the user to perform the following tasks:
 
 ![Select Library Data](assets/BrowseForLookupTable.png)
 
-    __NOTE:__ The Library Data can be either an Excel workbook exported from ServiceTitan or the generated historical invoice JSON lookup file. The generated JSON file is preferred for performance reasons and should appear after using the application for the first time.
+__NOTE:__ The Library Data can be either an Excel workbook exported from ServiceTitan or the generated historical invoice JSON lookup file. The generated JSON file is preferred for performance reasons and should appear after using the application for the first time.
 
 5. Lastly, click the "Browse" button next to the `Output Directory` input field to select the folder where the generated reports, master workbook, and PDF exports will be saved.
 
@@ -43,7 +43,7 @@ This project is a tool that allows the user to perform the following tasks:
 
 9. At this point, the user is encouraged to review the generated master workbook and individual commission reports for accuracy. The files will be located in the output directory specified earlier.
 
-   __NOTE:__ DO NOT CLOSE THE PAYROLL PROCESSOR APPLICATION AT THIS TIME, IT WILL LOSE ITS CONNECTION TO THE MERGED WORKBOOK AND WILL BE UNABLE TO EXPORT THE PDF REPORTS.
+__NOTE:__ DO NOT CLOSE THE PAYROLL PROCESSOR APPLICATION AT THIS TIME, IT WILL LOSE ITS CONNECTION TO THE MERGED WORKBOOK AND WILL BE UNABLE TO EXPORT THE PDF REPORTS.
 
 10. After reviewing the generated reports, click the now-active "`Export PDFs`" button at the bottom center of the window to generate PDF versions of the individual commission reports for distribution to technicians. The application will ask for the date to append to the PDF filenames.
 
