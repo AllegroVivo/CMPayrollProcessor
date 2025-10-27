@@ -315,9 +315,10 @@ class ExcelInterface(QObject):
 
         # Add Conditional Formatting to highlight missing customer names in the master sheet
         self._master_tech_sheet.conditional_formatting.add(f"C3:C{self.master_current_row}", IS_BLANK_RULE)
-        # Make sure the Amount column is formatted as currency
-        for cell in self._master_tech_sheet["E"]:  # type: ignore
-            cell.number_format = FORMAT_CURRENCY_USD_SIMPLE
+        # Make sure number-related columns (E:L) are formatted as currency
+        for col in self._master_tech_sheet.iter_cols(min_col=5, max_col=12, min_row=3, max_row=self._master_tech_sheet.max_row):
+            for cell in col:
+                cell.number_format = FORMAT_CURRENCY_USD_SIMPLE
 
         # Dear god, don't forget to save the workbook! T_T
         # I/O operations can fail for any number of reasons, so wrap in try/except
