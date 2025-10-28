@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
 import json
 import logging
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Union, Optional, Sequence
+from typing import List, Dict, Union, Optional, Sequence, Any
 
 import win32com.client as win32
 from PySide6.QtCore import QObject
@@ -127,7 +128,6 @@ class ExcelInterface(QObject):
             self._lookup_table[invoice_id] = customer_name
 
         logging.info(f"Found {count} invoices in lookup master workbook.")
-        logging.info("Saving lookup table as JSON for faster access next time...")
 
         # Save out the lookup table as JSON for next time
         out_path = self.output_dir / "LookupTable.json"
@@ -297,8 +297,8 @@ class ExcelInterface(QObject):
                 name is not None
                 # There must be at least one invoice or DPA for this tech
                 and (len(data["invoices"]) > 0 or len(data["dpa"]) > 0)
-                # There must be at least one invoice with GP > $0.00 or DPA with amount > $0.00
-                and (sum(inv.gp for inv in data["invoices"]) > 0.0 or sum(dpa.amount for dpa in data["dpa"]) > 0.0)
+                # There must be at least one invoice with GP > $0.00 or DPA with any amount
+                and (sum(inv.gp for inv in data["invoices"]) > 0.0 or len(data["dpa"]) > 0)
             )
 
         # Now iterate through each technician and create their sheets
@@ -330,7 +330,14 @@ class ExcelInterface(QObject):
             logging.info("Workbook saved...")
         except Exception as ex:
             logging.critical(f"Error saving workbook: {ex}")
-            return
+            # Don't return here, we still want to attempt cleanup
+
+        if self._lookup_path.exists():
+            logging.debug(f"Removing temporary lookup file at {self._lookup_path}...")
+            try:
+                self._lookup_path.unlink(missing_ok=True)
+            except Exception as ex:
+                logging.error(f"Failed to remove temporary lookup file: {ex}")
 
 ################################################################################
     def _populate_tech_data(self, tech_name: str) -> None:
@@ -420,6 +427,7 @@ class ExcelInterface(QObject):
         invoice_customer_lookup = {inv.invoice: inv.customer for inv in tech_invoices}
         amount_total = 0.0
 
+        memos: List[str] = ["Memo"]  # Start with header for memo column
         for inv in items_by_date:
             # If there's a matching DPA, include the memo and amount in the invoice section
             dt = inv.invoiced_on if isinstance(inv, Invoice) else inv.posted_on
@@ -427,6 +435,9 @@ class ExcelInterface(QObject):
             amount = inv.amount if isinstance(inv, DirectPayrollAdjustment) else inv.gp
             amount_total += amount
             customer = invoice_customer_lookup.get(inv.invoice, None)
+
+            # Add each memo to the memos list so we can auto-fit the contents later
+            memos.append(memo)
 
             # If the amount is $0.00 skip it, tech doesn't need to see it
             # Don't skip $0.00 DPAs though, those are important to show
@@ -443,15 +454,21 @@ class ExcelInterface(QObject):
             append_row([inv.invoice, dt.strftime("%m/%d/%Y"), customer, memo, amount], True)
 
         # Add a total row at the bottom
-        sheet.append(["", "", "", "Total:", amount_total])
-        self._master_tech_sheet.append(["", "", "", "", "Total:", amount_total])
+        sheet.append(["", "", "", "Total:", f"=SUM(E3:E{self.current_row - 1})"])
+        self.current_row += 1
+        self._master_tech_sheet.append(["", "", "", "", "Total:", _get_cell_ref(f"E{self.current_row - 1}")])
         self.master_current_row += 1
 
-        total_row: List[Cell] = list(sheet.iter_rows(min_row=self.current_row, max_row=self.current_row, min_col=1, max_col=5))[0]  # type: ignore
-        # Format 'TOTAL' row (Bold, right-aligned on Amount)
-        for cell in total_row:
+        tech_total_row: List[Cell] = list(sheet.iter_rows(min_row=self.current_row - 1, max_row=self.current_row - 1, min_col=1, max_col=5))[0]  # type: ignore
+        master_total_row: List[Cell] = list(self._master_tech_sheet.iter_rows(min_row=self.master_current_row - 1, max_row=self.master_current_row - 1, min_col=1, max_col=5))[0]  # type: ignore
+        # Format 'TOTAL' rows in both sheets (Bold, right-aligned on Amount)
+        for cell in tech_total_row:
             cell.font = Font(bold=True)
             if cell.column == 4:  # Amount column
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+        for cell in master_total_row[4:6]:  # Only Total label and value columns
+            cell.font = Font(bold=True)
+            if cell.column == 5:  # Amount column
                 cell.alignment = Alignment(horizontal="right", vertical="center")
 
         # Apply conditional formatting for the Custom Name column to highlight blanks
@@ -463,6 +480,8 @@ class ExcelInterface(QObject):
         # Make sure the Amount column is formatted as currency
         for cell in sheet["E"]:  # type: ignore
             cell.number_format = FORMAT_CURRENCY_USD_SIMPLE
+
+        self.autofit_column(sheet, self.current_row)
 
 ################################################################################
     def export_pdfs(self, print_date: str) -> None:
@@ -503,7 +522,12 @@ class ExcelInterface(QObject):
                 pdf_slug = f"{ln}, {fn} - {print_date}.pdf"
                 pdf_path = out_path / pdf_slug
 
-                # Export the worksheet as a PDF
+                # Export the worksheet as a PDF scaled to fit a single page wide
+                # Don't try to move this to the end of `_populate_tech_data`. It
+                # doesn't work properly there for some reason. You've tried.
+                ws.PageSetup.Zoom = False
+                ws.PageSetup.FitToPagesWide = 1
+                ws.PageSetup.FitToPagesTall = False  # Unlimited length
                 ws.ExportAsFixedFormat(Type=0, Filename=str(pdf_path), Quality=0, IncludeDocProperties=True, IgnorePrintAreas=False)
                 logging.info(f"Extracting {ws.Name}...")
         except Exception as ex:
@@ -514,5 +538,71 @@ class ExcelInterface(QObject):
             if wb is not None:
                 wb.Close(False)
             excel_dispatch.Quit()
+
+################################################################################
+    @staticmethod
+    def _as_display_text(value: Any, num_fmt: Optional[str]) -> str:
+        """Best effort attempt at text width estimation for auto-fitting columns."""
+
+        # If there's no value, we can return an empty string
+        if value is None:
+            return ""
+
+        # This is relatively crude since real formatting is complex and relies on number_fmt/locale
+        if isinstance(value, (date, datetime, time)):
+            if isinstance(value, datetime):
+                return value.strftime("%m/%d/%Y %H:%M")
+            elif isinstance(value, date):
+                return value.strftime("%m/%d/%Y")
+            else:
+                return value.strftime("%H:%M")
+
+        # Currency detection
+        if isinstance(value, (int, float)) and num_fmt is not None:
+            nf = num_fmt.replace(" ", "").lower()
+            if "0.00" in nf and ("$" in nf or "usd" in nf):
+                # Add separators and 2 decimal places for width
+                return f"${value:,.2f}"
+
+        # Fallback to string
+        return str(value)
+
+################################################################################
+    def autofit_column(
+        self,
+        ws: Worksheet,
+        end_row: int,
+        *,
+        min_width: float = 10.0,
+        max_width: float = 35.0,
+        padding: float = 2.0,
+        bold_scalar: float = 1.08
+    ) -> None:
+        """Auto-fits the given column in `ws` based on estimated content width."""
+
+        max_chars = 0.0
+        # Cycle through each cell in the column to determine the maximum text width
+        for row in ws.iter_rows(min_row=2, max_row=end_row, min_col=4, max_col=4):
+            cell: Cell = row[0]
+            txt = self._as_display_text(cell.value, getattr(cell, "number_format", None))
+            if not txt:
+                continue
+
+            # This handles multi-line comments by taking the widest line
+            widest_line = max(len(line) for line in str(txt).splitlines())
+            # If there's bold formatting, scale the width accordingly
+            if cell.font and cell.font.bold:
+                widest_line *= bold_scalar
+            # If the widest line exceeds the current max, update it
+            if widest_line > max_chars:
+                max_chars = widest_line
+
+            # Finally, enable line wrapping to cover any memos that exceed the column width
+            cell.alignment = Alignment(wrap_text=True)
+
+        # Finally, set the column width with padding, clamped to min/max
+        # so it will still fit within the bounds of a page when printed
+        width = min(max_width, max(min_width, max_chars + padding))
+        ws.column_dimensions["D"].width = width
 
 ################################################################################

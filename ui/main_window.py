@@ -124,8 +124,8 @@ class MainWindow(QMainWindow):
         filepath = QFileDialog.getOpenFileName(
             self,
             "Select Customer Name Lookup Table",
-            "./LookupTable.json",
-            "JSON Files (*.json);;Excel Files (*.xlsx *.xlsm *.xlsb *.xls);;All Files (*)"
+            "",
+            "Excel Files (*.xlsx *.xlsm *.xlsb *.xls);;All Files (*)"
         )
         if filepath is not None:
             self.library_path_edit.setText(filepath[0])
