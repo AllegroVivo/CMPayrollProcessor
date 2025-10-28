@@ -38,9 +38,8 @@ class MergeWorker(QObject):
             from app.excel import ExcelInterface  # import here so this code lives in worker thread
 
             excel = ExcelInterface(self.wb_path, self.library_path, self.output_dir)
-            excel.run_merge()
-
-            logging.info("Merge operation completed.")
+            if excel.run_merge():
+                logging.info("Merge operation completed.")
             self.finished.emit(excel)
         except Exception as ex:
             logging.critical("Merge failed")

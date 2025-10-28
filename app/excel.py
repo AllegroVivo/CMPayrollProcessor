@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import List, Dict, Union, Optional, Sequence, Any
 
 import win32com.client as win32
+from pywintypes import com_error
 from PySide6.QtCore import QObject
 from openpyxl import load_workbook, Workbook
 from openpyxl.cell import Cell
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.styles.numbers import FORMAT_CURRENCY_USD_SIMPLE
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -32,6 +33,9 @@ IS_BLANK_RULE = FormulaRule(
     fill=YELLOW_FILL,
     stopIfTrue=True,
 )
+
+THIN_GRAY = Side(style="thin", color="D9D9D9")
+ROW_BORDER = Border(bottom=THIN_GRAY)
 
 ################################################################################
 class ExcelInterface(QObject):
@@ -278,7 +282,7 @@ class ExcelInterface(QObject):
         logging.info(f"Direct Payroll Adjustments populated: {len(self._technician_dict)} total technicians found in all.")
 
 ################################################################################
-    def run_merge(self) -> None:
+    def run_merge(self) -> bool:
         """Run the merge operation to create technician-specific sheets."""
 
         # Start off with the master sheet that all records will be added to
@@ -320,6 +324,9 @@ class ExcelInterface(QObject):
             for cell in col:
                 cell.number_format = FORMAT_CURRENCY_USD_SIMPLE
 
+        # Simple flag to indicate success
+        flag = True
+
         # Dear god, don't forget to save the workbook! T_T
         # I/O operations can fail for any number of reasons, so wrap in try/except
         try:
@@ -328,9 +335,14 @@ class ExcelInterface(QObject):
             logging.info(f"Saving combined workbook to {self.out_wb_path}")
             self.workbook.save(self.out_wb_path)
             logging.info("Workbook saved...")
+        except PermissionError:
+            logging.critical(f"Permission denied when saving workbook (is it open in another program?)")
+            # Don't return here, we still want to attempt cleanup
+            flag = False
         except Exception as ex:
             logging.critical(f"Error saving workbook: {ex}")
             # Don't return here, we still want to attempt cleanup
+            flag = False
 
         if self._lookup_path.exists():
             logging.debug(f"Removing temporary lookup file at {self._lookup_path}...")
@@ -338,6 +350,8 @@ class ExcelInterface(QObject):
                 self._lookup_path.unlink(missing_ok=True)
             except Exception as ex:
                 logging.error(f"Failed to remove temporary lookup file: {ex}")
+
+        return flag
 
 ################################################################################
     def _populate_tech_data(self, tech_name: str) -> None:
@@ -406,7 +420,7 @@ class ExcelInterface(QObject):
         label_row_master: List[Cell] = list(self._master_tech_sheet.iter_rows(min_row=self.master_current_row - 1, max_row=self.master_current_row - 1, min_col=1, max_col=len(master_header_items)))[0]  # type: ignore
         for cell in label_row_tech:
             cell.font = Font(bold=True)
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.alignment = Alignment(horizontal="left" if cell.column != 5 else "right", vertical="center")
         for cell in label_row_master:
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -427,7 +441,6 @@ class ExcelInterface(QObject):
         invoice_customer_lookup = {inv.invoice: inv.customer for inv in tech_invoices}
         amount_total = 0.0
 
-        memos: List[str] = ["Memo"]  # Start with header for memo column
         for inv in items_by_date:
             # If there's a matching DPA, include the memo and amount in the invoice section
             dt = inv.invoiced_on if isinstance(inv, Invoice) else inv.posted_on
@@ -435,9 +448,6 @@ class ExcelInterface(QObject):
             amount = inv.amount if isinstance(inv, DirectPayrollAdjustment) else inv.gp
             amount_total += amount
             customer = invoice_customer_lookup.get(inv.invoice, None)
-
-            # Add each memo to the memos list so we can auto-fit the contents later
-            memos.append(memo)
 
             # If the amount is $0.00 skip it, tech doesn't need to see it
             # Don't skip $0.00 DPAs though, those are important to show
@@ -480,6 +490,11 @@ class ExcelInterface(QObject):
         # Make sure the Amount column is formatted as currency
         for cell in sheet["E"]:  # type: ignore
             cell.number_format = FORMAT_CURRENCY_USD_SIMPLE
+
+        # Apply borders to all rows aside from total row
+        for row in sheet.iter_rows(min_row=1, max_row=self.current_row - 2, min_col=1, max_col=5):
+            for cell in row:
+                cell.border = ROW_BORDER
 
         self.autofit_column(sheet, self.current_row)
 
@@ -528,8 +543,12 @@ class ExcelInterface(QObject):
                 ws.PageSetup.Zoom = False
                 ws.PageSetup.FitToPagesWide = 1
                 ws.PageSetup.FitToPagesTall = False  # Unlimited length
-                ws.ExportAsFixedFormat(Type=0, Filename=str(pdf_path), Quality=0, IncludeDocProperties=True, IgnorePrintAreas=False)
-                logging.info(f"Extracting {ws.Name}...")
+                try:
+                    logging.info(f"Extracting {ws.Name}...")
+                    ws.ExportAsFixedFormat(Type=0, Filename=str(pdf_path), Quality=0, IncludeDocProperties=True, IgnorePrintAreas=False)
+                except com_error:
+                    logging.critical(f"Failed to export PDF for technician {ws.Name}: Is the PDF file already open?")
+                    continue
         except Exception as ex:
             logging.critical(f"Failed to open workbook for PDF export: {ex}")
             return
@@ -573,7 +592,7 @@ class ExcelInterface(QObject):
         ws: Worksheet,
         end_row: int,
         *,
-        min_width: float = 10.0,
+        min_width: float = 15.0,
         max_width: float = 35.0,
         padding: float = 2.0,
         bold_scalar: float = 1.08
@@ -598,7 +617,8 @@ class ExcelInterface(QObject):
                 max_chars = widest_line
 
             # Finally, enable line wrapping to cover any memos that exceed the column width
-            cell.alignment = Alignment(wrap_text=True)
+            # Center-justify header row, left-align others
+            cell.alignment = Alignment(wrap_text=True, horizontal="left")
 
         # Finally, set the column width with padding, clamped to min/max
         # so it will still fit within the bounds of a page when printed

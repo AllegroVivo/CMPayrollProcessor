@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.excel import ExcelInterface
-from app.logger import LogHandler
+from app.logger import LogHandler, LogHighlighter
 
 if TYPE_CHECKING:
     from ui.workers import MergeWorker, PDFExportWorker
@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
         self._pdf_thread: Optional[QThread] = None
         self._pdf_worker: Optional[PDFExportWorker] = None
 
+        self._working: bool = False
         self._exported_pdfs: bool = False
 
         self._setup_ui()
@@ -81,8 +82,10 @@ class MainWindow(QMainWindow):
         log_surface.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         main_layout.addWidget(log_surface, 1)
 
+        self._log_highlighter = LogHighlighter(log_surface.document())
+
         log_handler = LogHandler(log_surface)
-        log_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
+        log_handler.setFormatter(logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s", datefmt="%H:%M:%S"))
         logging.getLogger().addHandler(log_handler)
         logging.getLogger().setLevel(logging.INFO)
 
@@ -156,6 +159,9 @@ class MainWindow(QMainWindow):
 ################################################################################
     def run_merge(self) -> None:
 
+        self._working = True
+
+        self.cancel_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
         self.export_pdfs_btn.setEnabled(False)
 
@@ -192,23 +198,30 @@ class MainWindow(QMainWindow):
 
         self.export_pdfs_btn.setEnabled(True)
         self.run_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(True)
+
+        self._working = False
 
 ################################################################################
     def _on_merge_failed(self, _: str) -> None:
 
         self.run_btn.setEnabled(True)
         self.export_pdfs_btn.setEnabled(bool(self.excel))
+        self.cancel_btn.setEnabled(True)
+
+        self._working = False
 
 ################################################################################
     def export_pdfs(self) -> None:
 
-        assert self.excel is not None
+        self._working = True
 
         from .print_date_dialog import PrintDateDialog
         dialog = PrintDateDialog(self)
         if dialog.exec() != PrintDateDialog.DialogCode.Accepted:
             return
 
+        self.cancel_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
         self.export_pdfs_btn.setEnabled(False)
 
@@ -233,17 +246,32 @@ class MainWindow(QMainWindow):
 
         self.run_btn.setEnabled(True)
         self.export_pdfs_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(True)
         self._exported_pdfs = True
+
+        self._working = False
 
 ################################################################################
     def _on_pdf_failed(self, _: str) -> None:
 
         self.run_btn.setEnabled(True)
         self.export_pdfs_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(True)
+
+        self._working = False
 
 ################################################################################
     def closeEvent(self, event, /) -> None:
         """Close event handler to warn user if PDFs have not been exported yet."""
+
+        if self._working:
+            QMessageBox.warning(
+                self,
+                "Operation in Progress",
+                "An operation is still in progress. Please wait for it to complete before closing the window."
+            )
+            event.ignore()
+            return
 
         if not self._exported_pdfs:
             response = QMessageBox.question(
