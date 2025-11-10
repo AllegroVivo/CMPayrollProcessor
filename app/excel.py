@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
 import json
 import logging
 import os
 from collections import defaultdict
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import List, Dict, Union, Optional, Sequence, Any
 
 import win32com.client as win32
-from pywintypes import com_error
 from PySide6.QtCore import QObject
 from openpyxl import load_workbook, Workbook
 from openpyxl.cell import Cell
@@ -18,6 +17,7 @@ from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.styles.numbers import FORMAT_CURRENCY_USD_SIMPLE
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+from pywintypes import com_error
 
 from app.classes import Invoice, DirectPayrollAdjustment
 ################################################################################
@@ -510,7 +510,7 @@ class ExcelInterface(QObject):
         logging.info(f"Extracting PDF files...")
 
         # We need a handle to the Excel COM object to give it direct commands.
-        excel_dispatch = win32.gencache.EnsureDispatch("Excel.Application")
+        excel_dispatch = win32.Dispatch("Excel.Application")
         excel_dispatch.Visible = False
         excel_dispatch.DisplayAlerts = False
 
